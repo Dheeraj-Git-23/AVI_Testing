@@ -1,0 +1,255 @@
+from datetime import date
+import re
+import sqlite3
+from pathlib import Path
+
+from fastapi import FastAPI, Form, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+
+
+# --------------------------------------------------
+# APP
+# --------------------------------------------------
+
+app = FastAPI(
+    title="Avishkar-TEN Lead API",
+    version="1.0.0",
+)
+
+
+# --------------------------------------------------
+# CORS
+# --------------------------------------------------
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",
+    ],
+    allow_credentials=False,
+    allow_methods=["POST", "GET"],
+    allow_headers=["*"],
+)
+
+
+# --------------------------------------------------
+# DATABASE
+# --------------------------------------------------
+
+BASE_DIR = Path(__file__).resolve().parent
+DATABASE_PATH = BASE_DIR / "leads.db"
+
+
+def get_connection():
+    connection = sqlite3.connect(DATABASE_PATH)
+    connection.row_factory = sqlite3.Row
+    return connection
+
+
+def initialize_database():
+    connection = get_connection()
+
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS demo_requests (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            school_name TEXT NOT NULL,
+            location TEXT NOT NULL,
+            phone TEXT NOT NULL,
+            demo_date TEXT NOT NULL,
+            consent INTEGER NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+
+    connection.commit()
+    connection.close()
+
+
+initialize_database()
+
+
+# --------------------------------------------------
+# HEALTH CHECK
+# --------------------------------------------------
+
+@app.get("/")
+def root():
+    return {
+        "status": "ok",
+        "service": "Avishkar-TEN Lead API",
+    }
+
+
+# --------------------------------------------------
+# CREATE DEMO REQUEST
+# --------------------------------------------------
+
+@app.post("/api/demo-request")
+def create_demo_request(
+    schoolName: str = Form(...),
+    location: str = Form(...),
+    phone: str = Form(...),
+    demoDate: str = Form(...),
+    consent: str = Form(...),
+):
+       # -----------------------------
+    # Basic validation
+    # -----------------------------
+
+    school_name = schoolName.strip()
+    school_location = location.strip()
+    phone_number = phone.strip()
+
+    # School name
+    if not school_name:
+        raise HTTPException(
+            status_code=400,
+            detail="School name is required.",
+        )
+
+    if len(school_name) < 2:
+        raise HTTPException(
+            status_code=400,
+            detail="School name is too short.",
+        )
+
+    if len(school_name) > 150:
+        raise HTTPException(
+            status_code=400,
+            detail="School name is too long.",
+        )
+
+    # City / State
+    if not school_location:
+        raise HTTPException(
+            status_code=400,
+            detail="City / State is required.",
+        )
+
+    if len(school_location) < 2:
+        raise HTTPException(
+            status_code=400,
+            detail="City / State is too short.",
+        )
+
+    if len(school_location) > 100:
+        raise HTTPException(
+            status_code=400,
+            detail="City / State is too long.",
+        )
+
+    # Phone number
+    # Accept:
+    # 9876543210
+    # +919876543210
+    # +91 9876543210
+    # 09876543210
+    normalized_phone = re.sub(r"[\s\-()]", "", phone_number)
+
+    if normalized_phone.startswith("+91"):
+        normalized_phone = normalized_phone[3:]
+    elif normalized_phone.startswith("91") and len(normalized_phone) == 12:
+        normalized_phone = normalized_phone[2:]
+    elif normalized_phone.startswith("0") and len(normalized_phone) == 11:
+        normalized_phone = normalized_phone[1:]
+
+    if not re.fullmatch(r"[6-9]\d{9}", normalized_phone):
+        raise HTTPException(
+            status_code=400,
+            detail="Please enter a valid Indian 10-digit mobile number.",
+        )
+
+    # Consent
+    if consent.lower() not in {"yes", "true", "on", "1"}:
+        raise HTTPException(
+            status_code=400,
+            detail="Consent is required.",
+        )
+
+    # Demo date
+    try:
+        requested_date = date.fromisoformat(demoDate)
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid demo date.",
+        )
+
+    if requested_date < date.today():
+        raise HTTPException(
+            status_code=400,
+            detail="Demo date cannot be in the past.",
+        )
+    # -----------------------------
+    # Save lead
+    # -----------------------------
+
+    connection = get_connection()
+
+    cursor = connection.execute(
+        """
+        INSERT INTO demo_requests (
+            school_name,
+            location,
+            phone,
+            demo_date,
+            consent
+        )
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (
+            school_name,
+            school_location,
+            phone_number,
+            requested_date.isoformat(),
+            1,
+        ),
+    )
+
+    connection.commit()
+
+    lead_id = cursor.lastrowid
+
+    connection.close()
+
+    # -----------------------------
+    # Response
+    # -----------------------------
+
+    return {
+        "success": True,
+        "message": "Demo request received.",
+        "lead_id": lead_id,
+    }
+
+
+# --------------------------------------------------
+# VIEW LEADS
+# --------------------------------------------------
+
+@app.get("/api/demo-requests")
+def get_demo_requests():
+    connection = get_connection()
+
+    rows = connection.execute(
+        """
+        SELECT
+            id,
+            school_name,
+            location,
+            phone,
+            demo_date,
+            created_at
+        FROM demo_requests
+        ORDER BY id DESC
+        """
+    ).fetchall()
+
+    connection.close()
+
+    return {
+        "count": len(rows),
+        "leads": [dict(row) for row in rows],
+    }
