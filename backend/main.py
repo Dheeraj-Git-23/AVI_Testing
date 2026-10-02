@@ -3,8 +3,9 @@ import re
 import sqlite3
 from pathlib import Path
 
-from fastapi import FastAPI, Form, HTTPException
+from fastapi import FastAPI, Form, HTTPException , Query
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
 
 # --------------------------------------------------
@@ -49,6 +50,7 @@ def get_connection():
 def initialize_database():
     connection = get_connection()
 
+  
     connection.execute(
         """
         CREATE TABLE IF NOT EXISTS demo_requests (
@@ -58,14 +60,29 @@ def initialize_database():
             phone TEXT NOT NULL,
             demo_date TEXT NOT NULL,
             consent INTEGER NOT NULL,
+            status TEXT NOT NULL DEFAULT 'NEW',
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
         """
     )
 
+    columns = connection.execute(
+        "PRAGMA table_info(demo_requests)"
+    ).fetchall()
+
+    column_names = {column["name"] for column in columns}
+
+    # Safely upgrade an existing database.
+    if "status" not in column_names:
+        connection.execute(
+            """
+            ALTER TABLE demo_requests
+            ADD COLUMN status TEXT NOT NULL DEFAULT 'NEW'
+            """
+        )
+
     connection.commit()
     connection.close()
-
 
 initialize_database()
 
@@ -195,9 +212,10 @@ def create_demo_request(
             location,
             phone,
             demo_date,
-            consent
+            consent,
+            status
         )
-        VALUES (?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?,?)
         """,
         (
             school_name,
@@ -205,6 +223,7 @@ def create_demo_request(
             phone_number,
             requested_date.isoformat(),
             1,
+            "NEW",
         ),
     )
 
@@ -224,32 +243,145 @@ def create_demo_request(
         "lead_id": lead_id,
     }
 
+ALLOWED_STATUSES = {
+    "NEW",
+    "CONTACTED",
+    "DEMO SCHEDULED",
+    "COMPLETED",
+    "CLOSED",
+}
+
+
+class StatusUpdate(BaseModel):
+    status: str
+
+# --------------------------------------------------
+# UPDATE LEAD STATUS
+# --------------------------------------------------
+
+@app.patch("/api/demo-requests/{lead_id}/status")
+def update_demo_request_status(
+    lead_id: int,
+    status_update: StatusUpdate,
+):
+    new_status = status_update.status.strip().upper()
+
+    # Validate status
+    if new_status not in ALLOWED_STATUSES:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "message": "Invalid lead status.",
+                "allowed_statuses": sorted(ALLOWED_STATUSES),
+            },
+        )
+
+    connection = get_connection()
+
+    # Check that the lead exists
+    lead = connection.execute(
+        """
+        SELECT id
+        FROM demo_requests
+        WHERE id = ?
+        """,
+        (lead_id,),
+    ).fetchone()
+
+    if lead is None:
+        connection.close()
+
+        raise HTTPException(
+            status_code=404,
+            detail="Lead not found.",
+        )
+
+    # Update status
+    connection.execute(
+        """
+        UPDATE demo_requests
+        SET status = ?
+        WHERE id = ?
+        """,
+        (new_status, lead_id),
+    )
+
+    connection.commit()
+    connection.close()
+
+    return {
+        "success": True,
+        "message": "Lead status updated.",
+        "lead_id": lead_id,
+        "status": new_status,
+    }
 
 # --------------------------------------------------
 # VIEW LEADS
 # --------------------------------------------------
 
 @app.get("/api/demo-requests")
-def get_demo_requests():
+def get_demo_requests(
+    status: str | None = Query(default=None)
+):
     connection = get_connection()
 
-    rows = connection.execute(
-        """
-        SELECT
-            id,
-            school_name,
-            location,
-            phone,
-            demo_date,
-            created_at
-        FROM demo_requests
-        ORDER BY id DESC
-        """
-    ).fetchall()
+
+    if status is not None:
+        requested_status = status.strip().upper()
+
+        if requested_status not in ALLOWED_STATUSES:
+            connection.close()
+
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "message": "Invalid status filter.",
+                    "allowed_statuses": sorted(ALLOWED_STATUSES),
+                },
+            )
+
+        rows = connection.execute(
+            """
+            SELECT
+                id,
+                school_name,
+                location,
+                phone,
+                demo_date,
+                status,
+                created_at
+            FROM demo_requests
+            WHERE status = ?
+            ORDER BY id DESC
+            """,
+            (requested_status,),
+        ).fetchall()
+
+    # ----------------------------------------
+    # No filter → return all leads
+    # ----------------------------------------
+
+    else:
+        rows = connection.execute(
+            """
+            SELECT
+                id,
+                school_name,
+                location,
+                phone,
+                demo_date,
+                status,
+                created_at
+            FROM demo_requests
+            ORDER BY id DESC
+            """
+        ).fetchall()
 
     connection.close()
 
     return {
         "count": len(rows),
+        "filter": status.upper() if status else "ALL",
         "leads": [dict(row) for row in rows],
     }
