@@ -12,59 +12,66 @@ import {
   Users,
 } from "lucide-react";
 
-const updateLeadStatus = async (leadId, newStatus) => {
-  try {
-    const response = await fetch(
-      `${API_URL}/api/demo-requests/${leadId}/status`,
-      {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          status: newStatus,
-        }),
-      }
-    );
+const API_URL =
+    import.meta.env.VITE_API_URL ||
+    "http://127.0.0.1:8000";
 
-    if (!response.ok) {
-      const errorData = await response.json();
-
-      throw new Error(
-        errorData.detail?.message ||
-        errorData.detail ||
-        "Failed to update lead status."
-      );
-    }
-
-    const updatedLead = await response.json();
-
-    setLeads((currentLeads) =>
-      currentLeads.map((lead) =>
-        lead.id === leadId
-          ? {
-              ...lead,
-              status: updatedLead.status,
-            }
-          : lead
-      )
-    );
-  } catch (err) {
-    console.error(err);
-
-    setError(
-      err.message || "Unable to update lead status."
-    );
-  }
-};
 
 function AdminDashboard() {
-    const API_URL = "http://127.0.0.1:8000";
-    const [leads, setLeads] = useState([]);
+     const [error, setError] = useState("");
+     const [leads, setLeads] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [error, setError] = useState("");
     const [selectedStatus, setSelectedStatus] = useState("ALL");
     const [searchTerm, setSearchTerm] = useState("");
+    const updateLeadStatus = async (leadId, newStatus) => {
+    try {
+        console.log("2. UPDATE FUNCTION:", {
+            leadId,
+            newStatus,
+        });
+
+        const response = await fetch(
+            `${API_URL}/api/demo-requests/${leadId}/status`,
+            {
+                method: "PATCH",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    status: newStatus,
+                }),
+            }
+        );
+
+        const data = await response.json();
+
+        console.log("STATUS API RESPONSE:", data);
+
+        if (!response.ok) {
+            throw new Error(
+                data.detail?.message ||
+                data.detail ||
+                "Failed to update status."
+            );
+        }
+
+        setLeads((currentLeads) =>
+            currentLeads.map((lead) =>
+                lead.id === leadId
+                    ? {
+                          ...lead,
+                          status: newStatus,
+                      }
+                    : lead
+            )
+        );
+
+        console.log("STATUS UPDATED SUCCESSFULLY");
+
+    } catch (error) {
+        console.error("STATUS UPDATE ERROR:", error);
+    }
+};
     useEffect(() => {
   async function fetchLeads() {
     try {
@@ -453,28 +460,19 @@ function LeadCard({
                     >
                         {status}
                     </span>
-
+                        
 
                     <select
                         value={status}
-                        onChange={async (event) => {
-
+                        onChange={(event) => {
                             const newStatus = event.target.value;
 
-                            console.log(
-                                "STATUS CHANGE:",
-                                {
-                                    id,
-                                    oldStatus: status,
-                                    newStatus,
-                                }
-                            );
-
-                            await onStatusChange(
+                            console.log("1. SELECT:", {
                                 id,
-                                newStatus
-                            );
+                                newStatus,
+                            });
 
+                            onStatusChange(id, newStatus);
                         }}
                         className="w-full cursor-pointer rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 sm:w-auto"
                     >
