@@ -23,6 +23,11 @@ function AdminDashboard() {
     const [loading, setLoading] = useState(true);
     const [selectedStatus, setSelectedStatus] = useState("ALL");
     const [searchTerm, setSearchTerm] = useState("");
+
+    function handleLogout() {
+    localStorage.removeItem("adminToken");
+    window.location.href = "/admin";
+}
     const updateLeadStatus = async (leadId, newStatus) => {
     try {
         console.log("2. UPDATE FUNCTION:", {
@@ -30,19 +35,27 @@ function AdminDashboard() {
             newStatus,
         });
 
-        const response = await fetch(
-            `${API_URL}/api/demo-requests/${leadId}/status`,
-            {
-                method: "PATCH",
-                headers: {
-                    "Content-Type": "application/json",
-                },
-                body: JSON.stringify({
-                    status: newStatus,
-                }),
-            }
-        );
+        const token = localStorage.getItem("adminToken");
 
+const response = await fetch(
+    `${API_URL}/api/demo-requests/${leadId}/status`,
+    {
+        method: "PATCH",
+        headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+            status: newStatus,
+        }),
+    }
+);
+
+if (response.status === 401) {
+    localStorage.removeItem("adminToken");
+    window.location.href = "/admin";
+    return;
+}
         const data = await response.json();
 
         console.log("STATUS API RESPONSE:", data);
@@ -78,13 +91,26 @@ function AdminDashboard() {
       setLoading(true);
       setError("");
 
-      const response = await fetch(
-        `${API_URL}/api/demo-requests`
-      );
+      const token = localStorage.getItem("adminToken");
 
-      if (!response.ok) {
-        throw new Error("Failed to fetch leads.");
-      }
+const response = await fetch(
+    `${API_URL}/api/demo-requests`,
+    {
+        headers: {
+            Authorization: `Bearer ${token}`,
+        },
+    }
+);
+
+if (response.status === 401) {
+    localStorage.removeItem("adminToken");
+    window.location.href = "/admin";
+    return;
+}
+
+if (!response.ok) {
+    throw new Error("Failed to fetch leads.");
+}
 
       const data = await response.json();
 
@@ -158,12 +184,20 @@ const filteredLeads = useMemo(() => {
                 <p className="text-xs font-medium text-slate-500">
                   Lead Management
                 </p>
+
               </div>
             </div>
           </div>
 
           <div className="rounded-full bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-600">
-            Admin
+            
+
+            <button
+                type="button"
+                onClick={handleLogout}
+            >
+                Logout
+            </button>
           </div>
         </div>
       </header>

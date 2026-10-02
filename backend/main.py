@@ -1,9 +1,11 @@
 from datetime import date
+import os
 import re
+import secrets
 import sqlite3
 from pathlib import Path
 
-from fastapi import FastAPI, Form, HTTPException ,Query
+from fastapi import FastAPI, Form, HTTPException ,Query, Header , Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -38,14 +40,39 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
-# --------------------------------------------------
-# DATABASE
-# --------------------------------------------------
-
 BASE_DIR = Path(__file__).resolve().parent
 DATABASE_PATH = BASE_DIR / "leads.db"
 
+ADMIN_USERNAME = os.getenv(
+    "ADMIN_USERNAME",
+    "admin",
+)
+
+ADMIN_PASSWORD = os.getenv(
+    "ADMIN_PASSWORD",
+    "change-this-password",
+)
+
+ADMIN_TOKEN = os.getenv(
+    "ADMIN_TOKEN",
+    "dev-admin-token",
+)
+
+def require_admin(
+    authorization: str | None = Header(default=None),
+):
+    expected = f"Bearer {ADMIN_TOKEN}"
+
+    if not authorization or not secrets.compare_digest(
+        authorization,
+        expected,
+    ):
+        raise HTTPException(
+            status_code=401,
+            detail="Admin authentication required.",
+        )
+
+    return 
 
 def get_connection():
     connection = sqlite3.connect(DATABASE_PATH)
@@ -104,6 +131,36 @@ def root():
         "service": "Avishkar-TEN Lead API",
     }
 
+# --------------------------------------------------
+# ADMIN LOGIN
+# --------------------------------------------------
+
+@app.post("/api/admin/login")
+def admin_login(
+    username: str = Form(...),
+    password: str = Form(...),
+):
+    username_valid = secrets.compare_digest(
+        username,
+        ADMIN_USERNAME,
+    )
+
+    password_valid = secrets.compare_digest(
+        password,
+        ADMIN_PASSWORD,
+    )
+
+    if not username_valid or not password_valid:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid admin credentials.",
+        )
+
+    return {
+        "success": True,
+        "message": "Admin login successful.",
+        "token": ADMIN_TOKEN,
+    }
 
 # --------------------------------------------------
 # CREATE DEMO REQUEST
@@ -269,6 +326,7 @@ class StatusUpdate(BaseModel):
 def update_demo_request_status(
     lead_id: int,
     status_update: StatusUpdate,
+    _: bool = Depends(require_admin),
 ):
     new_status = status_update.status.strip().upper()
 
@@ -327,7 +385,7 @@ def update_demo_request_status(
 # --------------------------------------------------
 
 @app.get("/api/demo-requests")
-def get_demo_requests():
+def get_demo_requests(_: bool = Depends(require_admin),):
     connection = get_connection()
 
     rows = connection.execute(
