@@ -3,7 +3,7 @@ import re
 import sqlite3
 from pathlib import Path
 
-from fastapi import FastAPI, Form, HTTPException , Query
+from fastapi import FastAPI, Form, HTTPException ,Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -26,9 +26,15 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:5173",
+        "http://127.0.0.1:5173",
     ],
     allow_credentials=False,
-    allow_methods=["POST", "GET"],
+    allow_methods=[
+        "GET",
+        "POST",
+        "PATCH",
+        "OPTIONS",
+    ],
     allow_headers=["*"],
 )
 
@@ -321,67 +327,27 @@ def update_demo_request_status(
 # --------------------------------------------------
 
 @app.get("/api/demo-requests")
-def get_demo_requests(
-    status: str | None = Query(default=None)
-):
+def get_demo_requests():
     connection = get_connection()
 
-
-    if status is not None:
-        requested_status = status.strip().upper()
-
-        if requested_status not in ALLOWED_STATUSES:
-            connection.close()
-
-            raise HTTPException(
-                status_code=400,
-                detail={
-                    "message": "Invalid status filter.",
-                    "allowed_statuses": sorted(ALLOWED_STATUSES),
-                },
-            )
-
-        rows = connection.execute(
-            """
-            SELECT
-                id,
-                school_name,
-                location,
-                phone,
-                demo_date,
-                status,
-                created_at
-            FROM demo_requests
-            WHERE status = ?
-            ORDER BY id DESC
-            """,
-            (requested_status,),
-        ).fetchall()
-
-    # ----------------------------------------
-    # No filter → return all leads
-    # ----------------------------------------
-
-    else:
-        rows = connection.execute(
-            """
-            SELECT
-                id,
-                school_name,
-                location,
-                phone,
-                demo_date,
-                status,
-                created_at
-            FROM demo_requests
-            ORDER BY id DESC
-            """
-        ).fetchall()
+    rows = connection.execute(
+    """
+    SELECT
+        id,
+        school_name,
+        location,
+        phone,
+        demo_date,
+        status,
+        created_at
+    FROM demo_requests
+    ORDER BY id DESC
+    """
+).fetchall()
 
     connection.close()
 
     return {
         "count": len(rows),
-        "filter": status.upper() if status else "ALL",
         "leads": [dict(row) for row in rows],
     }
