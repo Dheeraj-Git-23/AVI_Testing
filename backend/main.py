@@ -4,10 +4,13 @@ import re
 import secrets
 import sqlite3
 from pathlib import Path
+from dotenv import load_dotenv
 
 from fastapi import FastAPI, Form, HTTPException ,Query, Header , Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+
+load_dotenv()
 
 
 # --------------------------------------------------
@@ -43,20 +46,9 @@ app.add_middleware(
 BASE_DIR = Path(__file__).resolve().parent
 DATABASE_PATH = BASE_DIR / "leads.db"
 
-ADMIN_USERNAME = os.getenv(
-    "ADMIN_USERNAME",
-    "admin",
-)
-
-ADMIN_PASSWORD = os.getenv(
-    "ADMIN_PASSWORD",
-    "change-this-password",
-)
-
-ADMIN_TOKEN = os.getenv(
-    "ADMIN_TOKEN",
-    "dev-admin-token",
-)
+ADMIN_USERNAME = os.getenv("ADMIN_USERNAME")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD")
+ADMIN_TOKEN = os.getenv("ADMIN_TOKEN")
 
 def require_admin(
     authorization: str | None = Header(default=None),
