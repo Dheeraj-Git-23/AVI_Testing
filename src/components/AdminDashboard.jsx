@@ -18,6 +18,7 @@ const API_URL =
 
 
 function AdminDashboard() {
+     const token = localStorage.getItem("adminToken");
      const [error, setError] = useState("");
      const [leads, setLeads] = useState([]);
     const [loading, setLoading] = useState(true);
