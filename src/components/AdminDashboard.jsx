@@ -14,7 +14,7 @@ import {
 
 const API_URL =
     import.meta.env.VITE_API_URL ||
-    "http://127.0.0.1:8000";
+    "https://avishkar-ten-backend.onrender.com";
 
 
 function AdminDashboard() {
